@@ -1,0 +1,129 @@
+/* AI Recommendation Styles */
+
+.ai-modal {
+    max-width: 450px;
+}
+
+.ai-suggestion {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.5rem;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-lg);
+    margin-bottom: 1rem;
+}
+
+.suggestion-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--bg-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.suggestion-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.suggestion-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.suggestion-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+.suggestion-value.approve {
+    color: var(--success);
+}
+
+.suggestion-value.reject {
+    color: var(--danger);
+}
+
+.suggestion-value.review {
+    color: var(--warning);
+}
+
+.ai-risk {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.risk-label {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.risk-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.ai-reason {
+    display: flex;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: rgba(99, 102, 241, 0.1);
+    border-radius: var(--radius-md);
+    margin-bottom: 1rem;
+    color: var(--text-secondary);
+}
+
+.ai-reason p {
+    margin: 0;
+    line-height: 1.5;
+}
+
+.ai-considerations {
+    margin-bottom: 1rem;
+}
+
+.ai-considerations h4 {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.ai-considerations ul {
+    margin: 0;
+    padding-left: 1.25rem;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.ai-considerations li {
+    margin-bottom: 0.25rem;
+}
+
+.ai-disclaimer {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background: rgba(245, 158, 11, 0.1);
+    border-radius: var(--radius-md);
+    color: var(--warning);
+    font-size: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+
+.ai-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.ai-actions .btn {
+    flex: 1;
+}
