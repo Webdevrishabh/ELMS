@@ -70,5 +70,6 @@ console.log(`
 
 export default {
     port,
-    fetch: app.fetch
+    fetch: app.fetch,
+    hostname: '0.0.0.0'
 };
