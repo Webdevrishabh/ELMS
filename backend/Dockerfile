@@ -15,5 +15,5 @@ COPY . .
 # Expose port (must match PORT env var)
 EXPOSE 5000
 
-# Start command
-CMD ["bun", "run", "index.ts"]
+# Start command (Init DB first since it's ephemeral)
+CMD ["sh", "-c", "bun run db:init && bun run index.ts"]
