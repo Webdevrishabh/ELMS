@@ -9,12 +9,11 @@ import postgres from 'postgres';
 const connectionString = process.env.DATABASE_URL;
 
 if (!connectionString) {
-    console.error('❌ DATABASE_URL environment variable is missing!');
-    process.exit(1);
+    console.warn('⚠️ DATABASE_URL is missing! Database features will fail.');
 }
 
-const sql = postgres(connectionString, {
-    ssl: 'require', // Railway requires SSL
+const sql = postgres(connectionString || 'postgres://user:pass@localhost:5432/db', {
+    ssl: connectionString ? 'require' : false, // Railway requires SSL
     max: 10, // Pool size
 });
 
