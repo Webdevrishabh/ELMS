@@ -12,10 +12,13 @@ if (!connectionString) {
     console.warn('⚠️ DATABASE_URL is missing! Database features will fail.');
 }
 
+// Disable SSL for internal Railway connections (they hang with ssl: 'require')
+const isInternal = connectionString ? connectionString.includes('.internal') : false;
+
 const sql = postgres(connectionString || 'postgres://user:pass@localhost:5432/db', {
-    ssl: connectionString ? 'require' : false,
+    ssl: connectionString && !isInternal ? 'require' : false,
     max: 10,
-    connect_timeout: 5, // Fail fast (5 seconds)
+    connect_timeout: 10, // Increased timeout for initial connection
     onnotice: () => { }, // Silence notice logs
 });
 
