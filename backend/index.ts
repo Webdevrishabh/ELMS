@@ -58,8 +58,11 @@ app.onError((err, c) => {
     return c.json({ error: 'Internal Server Error' }, 500);
 });
 
-// Start server
+// Initialize DB and Start server
 const port = parseInt(process.env.PORT || '5000');
+import initDb from './src/config/initDb';
+
+await initDb();
 
 console.log(`
 ╔═══════════════════════════════════════════╗

@@ -73,12 +73,17 @@ const init = async () => {
         }
 
         console.log('🎉 Database initialization complete!');
-        process.exit(0);
+        if (import.meta.main) process.exit(0);
 
     } catch (error) {
         console.error('❌ Database initialization failed:', error);
-        process.exit(1);
+        if (import.meta.main) process.exit(1);
+        throw error; // Re-throw for startup
     }
 };
 
-init();
+if (import.meta.main) {
+    init();
+}
+
+export default init;
