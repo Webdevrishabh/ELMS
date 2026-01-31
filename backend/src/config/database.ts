@@ -6,7 +6,7 @@
 import postgres from 'postgres';
 
 // Get connection string from environment variable
-const connectionString = process.env.DATABASE_URL;
+const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 
 if (!connectionString) {
     console.warn('⚠️ DATABASE_URL is missing! Database features will fail.');
