@@ -5,7 +5,7 @@
 
 import { Context } from 'hono';
 import bcrypt from 'bcryptjs';
-import db from '../config/database';
+import sql from '../config/database';
 import { JWTPayload } from '../middleware/authMiddleware';
 
 interface User {
@@ -27,14 +27,14 @@ interface User {
  */
 export const getAllUsers = async (c: Context) => {
     try {
-        const users = db.query(`
+        const users = await sql`
             SELECT u.id, u.email, u.name, u.role, u.team_id, t.name as team_name,
                    u.leave_balance, u.sick_leave_balance, u.casual_leave_balance,
                    u.phone, u.created_at
             FROM users u
             LEFT JOIN teams t ON u.team_id = t.id
             ORDER BY u.created_at DESC
-        `).all();
+        `;
 
         return c.json({ users });
     } catch (error) {
@@ -50,14 +50,16 @@ export const getUser = async (c: Context) => {
     try {
         const id = c.req.param('id');
 
-        const user = db.query(`
+        const users = await sql`
             SELECT u.id, u.email, u.name, u.role, u.team_id, t.name as team_name,
                    u.leave_balance, u.sick_leave_balance, u.casual_leave_balance,
                    u.skills, u.phone, u.created_at
             FROM users u
             LEFT JOIN teams t ON u.team_id = t.id
-            WHERE u.id = ?
-        `).get(id);
+            WHERE u.id = ${id}
+        `;
+
+        const user = users[0];
 
         if (!user) {
             return c.json({ error: 'User not found' }, 404);
@@ -87,8 +89,8 @@ export const createUser = async (c: Context) => {
         }
 
         // Check if email exists
-        const existing = db.query('SELECT id FROM users WHERE email = ?').get(email);
-        if (existing) {
+        const existing = await sql`SELECT id FROM users WHERE email = ${email}`;
+        if (existing.length > 0) {
             return c.json({ error: 'Email already exists' }, 400);
         }
 
@@ -96,14 +98,15 @@ export const createUser = async (c: Context) => {
         const passwordHash = bcrypt.hashSync(password, 10);
 
         // Insert user
-        const result = db.query(`
+        const result = await sql`
             INSERT INTO users (email, password_hash, name, role, team_id, phone)
-            VALUES (?, ?, ?, ?, ?, ?)
-        `).run(email, passwordHash, name, role, teamId || null, phone || null);
+            VALUES (${email}, ${passwordHash}, ${name}, ${role}, ${teamId || null}, ${phone || null})
+            RETURNING id
+        `;
 
         return c.json({
             message: 'User created successfully',
-            userId: result.lastInsertRowid
+            userId: result[0].id
         }, 201);
     } catch (error) {
         console.error('Create user error:', error);
@@ -126,35 +129,32 @@ export const updateUser = async (c: Context) => {
         }
 
         // Check user exists
-        const existing = db.query('SELECT id FROM users WHERE id = ?').get(id);
-        if (!existing) {
+        const existing = await sql`SELECT id FROM users WHERE id = ${id}`;
+        if (existing.length === 0) {
             return c.json({ error: 'User not found' }, 404);
         }
 
-        // Build update query dynamically
-        const updates: string[] = [];
-        const values: any[] = [];
-
-        if (name) { updates.push('name = ?'); values.push(name); }
-        if (phone !== undefined) { updates.push('phone = ?'); values.push(phone); }
+        // Build update object
+        const updateData: any = {};
+        if (name) updateData.name = name;
+        if (phone !== undefined) updateData.phone = phone;
 
         // Only admin can update these
         if (currentUser.role === 'admin') {
-            if (role) { updates.push('role = ?'); values.push(role); }
-            if (teamId !== undefined) { updates.push('team_id = ?'); values.push(teamId); }
-            if (leaveBalance !== undefined) { updates.push('leave_balance = ?'); values.push(leaveBalance); }
-            if (sickLeaveBalance !== undefined) { updates.push('sick_leave_balance = ?'); values.push(sickLeaveBalance); }
-            if (casualLeaveBalance !== undefined) { updates.push('casual_leave_balance = ?'); values.push(casualLeaveBalance); }
+            if (role) updateData.role = role;
+            if (teamId !== undefined) updateData.team_id = teamId;
+            if (leaveBalance !== undefined) updateData.leave_balance = leaveBalance;
+            if (sickLeaveBalance !== undefined) updateData.sick_leave_balance = sickLeaveBalance;
+            if (casualLeaveBalance !== undefined) updateData.casual_leave_balance = casualLeaveBalance;
         }
 
-        if (updates.length === 0) {
+        if (Object.keys(updateData).length === 0) {
             return c.json({ error: 'No fields to update' }, 400);
         }
 
-        updates.push('updated_at = CURRENT_TIMESTAMP');
-        values.push(id);
+        updateData.updated_at = sql`CURRENT_TIMESTAMP`;
 
-        db.query(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+        await sql`UPDATE users SET ${sql(updateData)} WHERE id = ${id}`;
 
         return c.json({ message: 'User updated successfully' });
     } catch (error) {
@@ -176,9 +176,9 @@ export const deleteUser = async (c: Context) => {
             return c.json({ error: 'Cannot delete yourself' }, 400);
         }
 
-        const result = db.query('DELETE FROM users WHERE id = ?').run(id);
+        const result = await sql`DELETE FROM users WHERE id = ${id} RETURNING id`;
 
-        if (result.changes === 0) {
+        if (result.length === 0) {
             return c.json({ error: 'User not found' }, 404);
         }
 
@@ -196,16 +196,16 @@ export const getProfile = async (c: Context) => {
     try {
         const currentUser = c.get('user') as JWTPayload;
 
-        const user = db.query(`
+        const users = await sql`
             SELECT u.id, u.email, u.name, u.role, u.team_id, t.name as team_name,
                    u.leave_balance, u.sick_leave_balance, u.casual_leave_balance,
                    u.skills, u.phone, u.created_at
             FROM users u
             LEFT JOIN teams t ON u.team_id = t.id
-            WHERE u.id = ?
-        `).get(currentUser.userId);
+            WHERE u.id = ${currentUser.userId}
+        `;
 
-        return c.json({ user });
+        return c.json({ user: users[0] });
     } catch (error) {
         console.error('Get profile error:', error);
         return c.json({ error: 'Failed to fetch profile' }, 500);
@@ -220,21 +220,18 @@ export const updateProfile = async (c: Context) => {
         const currentUser = c.get('user') as JWTPayload;
         const { name, phone, skills } = await c.req.json();
 
-        const updates: string[] = [];
-        const values: any[] = [];
+        const updateData: any = {};
+        if (name) updateData.name = name;
+        if (phone !== undefined) updateData.phone = phone;
+        if (skills !== undefined) updateData.skills = JSON.stringify(skills);
 
-        if (name) { updates.push('name = ?'); values.push(name); }
-        if (phone !== undefined) { updates.push('phone = ?'); values.push(phone); }
-        if (skills !== undefined) { updates.push('skills = ?'); values.push(JSON.stringify(skills)); }
-
-        if (updates.length === 0) {
+        if (Object.keys(updateData).length === 0) {
             return c.json({ error: 'No fields to update' }, 400);
         }
 
-        updates.push('updated_at = CURRENT_TIMESTAMP');
-        values.push(currentUser.userId);
+        updateData.updated_at = sql`CURRENT_TIMESTAMP`;
 
-        db.query(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+        await sql`UPDATE users SET ${sql(updateData)} WHERE id = ${currentUser.userId}`;
 
         return c.json({ message: 'Profile updated successfully' });
     } catch (error) {
@@ -248,7 +245,7 @@ export const updateProfile = async (c: Context) => {
  */
 export const getTeams = async (c: Context) => {
     try {
-        const teams = db.query('SELECT id, name FROM teams ORDER BY name').all();
+        const teams = await sql`SELECT id, name FROM teams ORDER BY name`;
         return c.json({ teams });
     } catch (error) {
         console.error('Get teams error:', error);
@@ -270,17 +267,17 @@ export const createTeam = async (c: Context) => {
         const teamName = name.trim();
 
         // Check if team already exists
-        const existing = db.query('SELECT id FROM teams WHERE name = ?').get(teamName);
-        if (existing) {
-            return c.json({ error: 'Team already exists', team: existing }, 400);
+        const existing = await sql`SELECT id FROM teams WHERE name = ${teamName}`;
+        if (existing.length > 0) {
+            return c.json({ error: 'Team already exists', team: existing[0] }, 400);
         }
 
         // Insert new team
-        const result = db.query('INSERT INTO teams (name) VALUES (?)').run(teamName);
+        const result = await sql`INSERT INTO teams (name) VALUES (${teamName}) RETURNING id`;
 
         return c.json({
             message: 'Team created successfully',
-            team: { id: result.lastInsertRowid, name: teamName }
+            team: { id: result[0].id, name: teamName }
         }, 201);
     } catch (error) {
         console.error('Create team error:', error);

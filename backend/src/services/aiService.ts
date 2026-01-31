@@ -5,7 +5,7 @@
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import db from '../config/database';
+import sql from '../config/database';
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -43,12 +43,12 @@ export const maskData = (data: any): any => {
 /**
  * Log AI request/response
  */
-const logAICall = (userId: number, actionType: string, request: string, response: string) => {
+const logAICall = async (userId: number, actionType: string, request: string, response: string) => {
     try {
-        db.query(`
+        await sql`
             INSERT INTO ai_logs (user_id, action_type, request_masked, response_data)
-            VALUES (?, ?, ?, ?)
-        `).run(userId, actionType, request, response);
+            VALUES (${userId}, ${actionType}, ${request}, ${response})
+        `;
     } catch (error) {
         console.error('AI log error:', error);
     }

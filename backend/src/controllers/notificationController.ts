@@ -4,7 +4,7 @@
  */
 
 import { Context } from 'hono';
-import db from '../config/database';
+import sql from '../config/database';
 import { JWTPayload } from '../middleware/authMiddleware';
 
 /**
@@ -12,10 +12,10 @@ import { JWTPayload } from '../middleware/authMiddleware';
  */
 export const createNotification = async (userId: number, message: string, type: string, leaveId?: number) => {
     try {
-        db.query(`
+        await sql`
             INSERT INTO notifications (user_id, message, type, related_leave_id)
-            VALUES (?, ?, ?, ?)
-        `).run(userId, message, type, leaveId || null);
+            VALUES (${userId}, ${message}, ${type}, ${leaveId || null})
+        `;
     } catch (error) {
         console.error('Create notification error:', error);
     }
@@ -29,20 +29,20 @@ export const getNotifications = async (c: Context) => {
         const user = c.get('user') as JWTPayload;
         const unreadOnly = c.req.query('unread') === 'true';
 
-        let query = 'SELECT * FROM notifications WHERE user_id = ?';
+        let notifications;
         if (unreadOnly) {
-            query += ' AND is_read = 0';
+            notifications = await sql`SELECT * FROM notifications WHERE user_id = ${user.userId} AND is_read = 0 ORDER BY created_at DESC LIMIT 50`;
+        } else {
+            notifications = await sql`SELECT * FROM notifications WHERE user_id = ${user.userId} ORDER BY created_at DESC LIMIT 50`;
         }
-        query += ' ORDER BY created_at DESC LIMIT 50';
-
-        const notifications = db.query(query).all(user.userId);
 
         // Get unread count
-        const unreadCount = db.query('SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0').get(user.userId) as { count: number };
+        const unreadCountResult = await sql`SELECT COUNT(*) as count FROM notifications WHERE user_id = ${user.userId} AND is_read = 0`;
+        const unreadCount = parseInt(unreadCountResult[0].count);
 
         return c.json({
             notifications,
-            unreadCount: unreadCount.count
+            unreadCount
         });
     } catch (error) {
         console.error('Get notifications error:', error);
@@ -60,9 +60,9 @@ export const markAsRead = async (c: Context) => {
 
         if (notificationId === 'all') {
             // Mark all as read
-            db.query('UPDATE notifications SET is_read = 1 WHERE user_id = ?').run(user.userId);
+            await sql`UPDATE notifications SET is_read = 1 WHERE user_id = ${user.userId}`;
         } else {
-            db.query('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?').run(notificationId, user.userId);
+            await sql`UPDATE notifications SET is_read = 1 WHERE id = ${notificationId} AND user_id = ${user.userId}`;
         }
 
         return c.json({ message: 'Notification marked as read' });

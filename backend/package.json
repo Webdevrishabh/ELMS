@@ -8,10 +8,11 @@
     "db:init": "bun run src/config/initDb.ts"
   },
   "dependencies": {
-    "hono": "^4.0.0",
+    "@google/generative-ai": "^0.21.0",
     "bcryptjs": "^2.4.3",
+    "hono": "^4.0.0",
     "jsonwebtoken": "^9.0.2",
-    "@google/generative-ai": "^0.21.0"
+    "postgres": "^3.4.8"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

@@ -1,18 +1,21 @@
 /**
- * SQLite Database Configuration
- * Uses Bun's built-in SQLite for fast, native operations
+ * PostgreSQL Database Configuration
+ * Uses 'postgres' library for Bun
  */
 
-import { Database } from 'bun:sqlite';
-import { join } from 'path';
+import postgres from 'postgres';
 
-// Database file path
-const DB_PATH = join(import.meta.dir, '../../elms.db');
+// Get connection string from environment variable
+const connectionString = process.env.DATABASE_URL;
 
-// Initialize database connection
-const db = new Database(DB_PATH);
+if (!connectionString) {
+    console.error('❌ DATABASE_URL environment variable is missing!');
+    process.exit(1);
+}
 
-// Enable WAL mode for better concurrent performance
-db.exec('PRAGMA journal_mode = WAL');
+const sql = postgres(connectionString, {
+    ssl: 'require', // Railway requires SSL
+    max: 10, // Pool size
+});
 
-export default db;
+export default sql;

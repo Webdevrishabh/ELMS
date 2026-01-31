@@ -4,7 +4,7 @@
  */
 
 import { Context } from 'hono';
-import db from '../config/database';
+import sql from '../config/database';
 import { JWTPayload } from '../middleware/authMiddleware';
 import { chatAssistant, autoFillLeave, getLeaveRecommendation, detectConflicts } from '../services/aiService';
 
@@ -21,18 +21,20 @@ export const chat = async (c: Context) => {
         }
 
         // Get user context
-        const balances = db.query(`
+        const balancesResult = await sql`
             SELECT leave_balance, sick_leave_balance, casual_leave_balance
-            FROM users WHERE id = ?
-        `).get(user.userId) as any;
+            FROM users WHERE id = ${user.userId}
+        `;
+        const balances = balancesResult[0];
 
-        const stats = db.query(`
+        const statsResult = await sql`
             SELECT 
                 COUNT(*) as total,
                 SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
                 SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved
-            FROM leaves WHERE user_id = ?
-        `).get(user.userId) as any;
+            FROM leaves WHERE user_id = ${user.userId}
+        `;
+        const stats = statsResult[0];
 
         const context = {
             balances: {
@@ -40,7 +42,11 @@ export const chat = async (c: Context) => {
                 sick: balances?.sick_leave_balance || 0,
                 casual: balances?.casual_leave_balance || 0
             },
-            stats
+            stats: {
+                total: parseInt(stats?.total || 0),
+                pending: parseInt(stats?.pending || 0),
+                approved: parseInt(stats?.approved || 0)
+            }
         };
 
         const result = await chatAssistant(user.userId, message, context);
@@ -80,16 +86,17 @@ export const recommend = async (c: Context) => {
     try {
         const user = c.get('user') as JWTPayload;
         const leaveId = c.req.param('leaveId');
-        
+
         console.log(`[AI] Generating recommendation for Leave ID: ${leaveId}`);
 
         // Get leave details
-        const leave = db.query(`
+        const leaves = await sql`
             SELECT l.*, u.team_id, u.leave_balance
             FROM leaves l
             JOIN users u ON l.user_id = u.id
-            WHERE l.id = ?
-        `).get(leaveId) as any;
+            WHERE l.id = ${leaveId}
+        `;
+        const leave = leaves[0];
 
         if (!leave) {
             console.warn(`[AI] Leave not found: ${leaveId}`);
@@ -101,20 +108,20 @@ export const recommend = async (c: Context) => {
         let teamSizeCount = 0;
 
         if (leave.team_id) {
-            const overlappingResult = db.query(`
+            const overlappingResult = await sql`
                 SELECT COUNT(*) as count
                 FROM leaves l
                 JOIN users u ON l.user_id = u.id
-                WHERE u.team_id = ? 
+                WHERE u.team_id = ${leave.team_id} 
                 AND l.status = 'approved'
-                AND l.from_date <= ? AND l.to_date >= ?
-            `).get(leave.team_id, leave.to_date, leave.from_date) as any;
-            overlappingCount = overlappingResult?.count || 0;
+                AND l.from_date <= ${leave.to_date} AND l.to_date >= ${leave.from_date}
+            `;
+            overlappingCount = parseInt(overlappingResult[0]?.count || 0);
 
-            const teamSizeResult = db.query(`
-                SELECT COUNT(*) as count FROM users WHERE team_id = ?
-            `).get(leave.team_id) as any;
-            teamSizeCount = teamSizeResult?.count || 0;
+            const teamSizeResult = await sql`
+                SELECT COUNT(*) as count FROM users WHERE team_id = ${leave.team_id}
+            `;
+            teamSizeCount = parseInt(teamSizeResult[0]?.count || 0);
         }
 
         const teamContext = {
@@ -156,18 +163,19 @@ export const conflicts = async (c: Context) => {
         }
 
         // Get user's team
-        const userData = db.query('SELECT team_id FROM users WHERE id = ?').get(user.userId) as any;
+        const userDataResult = await sql`SELECT team_id FROM users WHERE id = ${user.userId}`;
+        const userData = userDataResult[0];
 
         // Get overlapping leaves from team
-        const existingLeaves = db.query(`
+        const existingLeaves = await sql`
             SELECT l.from_date, l.to_date, l.leave_type, l.status
             FROM leaves l
             JOIN users u ON l.user_id = u.id
-            WHERE u.team_id = ? 
+            WHERE u.team_id = ${userData?.team_id} 
             AND l.status IN ('approved', 'pending')
-            AND l.from_date <= ? AND l.to_date >= ?
-            AND l.user_id != ?
-        `).all(userData?.team_id, toDate, fromDate, user.userId);
+            AND l.from_date <= ${toDate} AND l.to_date >= ${fromDate}
+            AND l.user_id != ${user.userId}
+        `;
 
         const leaveData = { from_date: fromDate, to_date: toDate, leave_type: leaveType };
 

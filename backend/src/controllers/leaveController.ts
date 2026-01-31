@@ -4,7 +4,7 @@
  */
 
 import { Context } from 'hono';
-import db from '../config/database';
+import sql from '../config/database';
 import { JWTPayload } from '../middleware/authMiddleware';
 import { createNotification } from './notificationController';
 
@@ -73,24 +73,25 @@ export const applyLeave = async (c: Context) => {
         // Team Lead leaves go directly to Admin (team_lead_approval = 'na')
         const teamLeadApproval = user.role === 'team_lead' ? 'na' : 'pending';
 
-        const result = db.query(`
+        const result = await sql`
             INSERT INTO leaves (user_id, leave_type, from_date, to_date, total_days, description, team_lead_approval)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(user.userId, leaveType, fromDate, toDate, totalDays, description || null, teamLeadApproval);
+            VALUES (${user.userId}, ${leaveType}, ${fromDate}, ${toDate}, ${totalDays}, ${description || null}, ${teamLeadApproval})
+            RETURNING id
+        `;
 
-        const leaveId = result.lastInsertRowid as number;
+        const leaveId = result[0].id;
 
         // Create notifications
         if (user.role === 'team_lead') {
             // Notify admins
-            const admins = db.query("SELECT id FROM users WHERE role = 'admin'").all() as { id: number }[];
+            const admins = await sql`SELECT id FROM users WHERE role = 'admin'`;
             for (const admin of admins) {
                 await createNotification(admin.id, `New leave request from Team Lead requires your approval`, 'leave_applied', leaveId);
             }
         } else {
             // Notify team lead
             if (user.teamId) {
-                const teamLeads = db.query("SELECT id FROM users WHERE role = 'team_lead' AND team_id = ?").all(user.teamId) as { id: number }[];
+                const teamLeads = await sql`SELECT id FROM users WHERE role = 'team_lead' AND team_id = ${user.teamId}`;
                 for (const tl of teamLeads) {
                     await createNotification(tl.id, `New leave request from your team member`, 'leave_applied', leaveId);
                 }
@@ -116,19 +117,16 @@ export const getMyLeaves = async (c: Context) => {
         const user = c.get('user') as JWTPayload;
         const status = c.req.query('status');
 
-        let query = `
-            SELECT * FROM leaves WHERE user_id = ?
-        `;
-        const params: any[] = [user.userId];
-
+        const conditions = [sql`user_id = ${user.userId}`];
         if (status && status !== 'all') {
-            query += ' AND status = ?';
-            params.push(status);
+            conditions.push(sql`status = ${status}`);
         }
 
-        query += ' ORDER BY created_at DESC';
-
-        const leaves = db.query(query).all(...params);
+        const leaves = await sql`
+            SELECT * FROM leaves 
+            WHERE ${conditions.length ? conditions.reduce((a, b) => sql`${a} AND ${b}`) : sql`1=1`}
+            ORDER BY created_at DESC
+        `;
 
         return c.json({ leaves });
     } catch (error) {
@@ -146,27 +144,26 @@ export const getTeamLeaves = async (c: Context) => {
         const status = c.req.query('status');
         const approval = c.req.query('approval'); // 'pending' for team lead pending
 
-        let query = `
-            SELECT l.*, u.name as user_name, u.email as user_email
-            FROM leaves l
-            JOIN users u ON l.user_id = u.id
-            WHERE u.team_id = ? AND u.role = 'employee'
-        `;
-        const params: any[] = [user.teamId];
+        const conditions = [
+            sql`u.team_id = ${user.teamId}`,
+            sql`u.role = 'employee'`
+        ];
 
         if (status && status !== 'all') {
-            query += ' AND l.status = ?';
-            params.push(status);
+            conditions.push(sql`l.status = ${status}`);
         }
 
         if (approval === 'pending') {
-            query += ' AND l.team_lead_approval = ?';
-            params.push('pending');
+            conditions.push(sql`l.team_lead_approval = 'pending'`);
         }
 
-        query += ' ORDER BY l.created_at DESC';
-
-        const leaves = db.query(query).all(...params);
+        const leaves = await sql`
+            SELECT l.*, u.name as user_name, u.email as user_email
+            FROM leaves l
+            JOIN users u ON l.user_id = u.id
+            WHERE ${conditions.reduce((a, b) => sql`${a} AND ${b}`)}
+            ORDER BY l.created_at DESC
+        `;
 
         return c.json({ leaves });
     } catch (error) {
@@ -183,28 +180,25 @@ export const getAllLeaves = async (c: Context) => {
         const status = c.req.query('status');
         const approval = c.req.query('approval'); // 'pending' for admin pending
 
-        let query = `
-            SELECT l.*, u.name as user_name, u.email as user_email, u.role as user_role, t.name as team_name
-            FROM leaves l
-            JOIN users u ON l.user_id = u.id
-            LEFT JOIN teams t ON u.team_id = t.id
-            WHERE 1=1
-        `;
-        const params: any[] = [];
+        const conditions: any[] = [sql`1=1`]; // Base condition
 
         if (status && status !== 'all') {
-            query += ' AND l.status = ?';
-            params.push(status);
+            conditions.push(sql`l.status = ${status}`);
         }
 
         if (approval === 'pending') {
             // Admin pending: team lead approved OR team lead is N/A (TL's own leave)
-            query += " AND l.admin_approval = 'pending' AND (l.team_lead_approval = 'approved' OR l.team_lead_approval = 'na')";
+            conditions.push(sql`l.admin_approval = 'pending' AND (l.team_lead_approval = 'approved' OR l.team_lead_approval = 'na')`);
         }
 
-        query += ' ORDER BY l.created_at DESC';
-
-        const leaves = db.query(query).all(...params);
+        const leaves = await sql`
+            SELECT l.*, u.name as user_name, u.email as user_email, u.role as user_role, t.name as team_name
+            FROM leaves l
+            JOIN users u ON l.user_id = u.id
+            LEFT JOIN teams t ON u.team_id = t.id
+            WHERE ${conditions.reduce((a, b) => sql`${a} AND ${b}`)}
+            ORDER BY l.created_at DESC
+        `;
 
         return c.json({ leaves });
     } catch (error) {
@@ -223,7 +217,9 @@ export const approveLeave = async (c: Context) => {
         const { comment } = await c.req.json();
 
         // Get leave
-        const leave = db.query('SELECT * FROM leaves WHERE id = ?').get(leaveId) as Leave | undefined;
+        const leaves = await sql<Leave[]>`SELECT * FROM leaves WHERE id = ${leaveId}`;
+        const leave = leaves[0];
+
         if (!leave) {
             return c.json({ error: 'Leave not found' }, 404);
         }
@@ -234,14 +230,14 @@ export const approveLeave = async (c: Context) => {
                 return c.json({ error: 'Leave already processed by team lead' }, 400);
             }
 
-            db.query(`
+            await sql`
                 UPDATE leaves 
-                SET team_lead_approval = 'approved', team_lead_comment = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            `).run(comment || null, leaveId);
+                SET team_lead_approval = 'approved', team_lead_comment = ${comment || null}, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ${leaveId}
+            `;
 
             // Notify Admin for final approval
-            const admins = db.query("SELECT id FROM users WHERE role = 'admin'").all() as { id: number }[];
+            const admins = await sql`SELECT id FROM users WHERE role = 'admin'`;
             for (const admin of admins) {
                 await createNotification(admin.id, `Leave request approved by Team Lead, pending your final approval`, 'leave_pending', leaveId);
             }
@@ -260,19 +256,26 @@ export const approveLeave = async (c: Context) => {
                 return c.json({ error: 'Leave needs Team Lead approval first' }, 400);
             }
 
-            db.query(`
+            await sql`
                 UPDATE leaves 
-                SET admin_approval = 'approved', status = 'approved', admin_comment = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            `).run(comment || null, leaveId);
+                SET admin_approval = 'approved', status = 'approved', admin_comment = ${comment || null}, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ${leaveId}
+            `;
 
             // Deduct leave balance
-            const leaveUser = db.query('SELECT * FROM users WHERE id = ?').get(leave.user_id) as any;
+            const leaveUsers = await sql`SELECT * FROM users WHERE id = ${leave.user_id}`;
+            const leaveUser = leaveUsers[0];
+
             if (leaveUser && leave.leave_type !== 'unpaid') {
                 const balanceField = leave.leave_type === 'sick' ? 'sick_leave_balance'
                     : leave.leave_type === 'casual' ? 'casual_leave_balance'
                         : 'leave_balance';
-                db.query(`UPDATE users SET ${balanceField} = ${balanceField} - ? WHERE id = ?`).run(leave.total_days, leave.user_id);
+
+                // Use unsafe for identifiers if necessary, but balanceField is safe here controlled by us.
+                // Or better, use separate queries or conditional updates to be safe from SQL injection even if internal variables.
+                // postgres.js doesn't allow standard parameterized identifiers easily without sql(identifier).
+
+                await sql`UPDATE users SET ${sql(balanceField)} = ${sql(balanceField)} - ${leave.total_days} WHERE id = ${leave.user_id}`;
             }
 
             // Notify employee
@@ -296,7 +299,9 @@ export const rejectLeave = async (c: Context) => {
         const { comment } = await c.req.json();
 
         // Get leave
-        const leave = db.query('SELECT * FROM leaves WHERE id = ?').get(leaveId) as Leave | undefined;
+        const leaves = await sql<Leave[]>`SELECT * FROM leaves WHERE id = ${leaveId}`;
+        const leave = leaves[0];
+
         if (!leave) {
             return c.json({ error: 'Leave not found' }, 404);
         }
@@ -306,18 +311,18 @@ export const rejectLeave = async (c: Context) => {
                 return c.json({ error: 'Leave already processed' }, 400);
             }
 
-            db.query(`
+            await sql`
                 UPDATE leaves 
-                SET team_lead_approval = 'rejected', status = 'rejected', team_lead_comment = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            `).run(comment || null, leaveId);
+                SET team_lead_approval = 'rejected', status = 'rejected', team_lead_comment = ${comment || null}, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ${leaveId}
+            `;
 
         } else if (user.role === 'admin') {
-            db.query(`
+            await sql`
                 UPDATE leaves 
-                SET admin_approval = 'rejected', status = 'rejected', admin_comment = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            `).run(comment || null, leaveId);
+                SET admin_approval = 'rejected', status = 'rejected', admin_comment = ${comment || null}, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ${leaveId}
+            `;
         }
 
         // Notify employee
@@ -338,19 +343,21 @@ export const getLeave = async (c: Context) => {
         const leaveId = parseInt(c.req.param('id'));
         const user = c.get('user') as JWTPayload;
 
-        const leave = db.query(`
+        const leaves = await sql`
             SELECT l.*, u.name as user_name, u.email as user_email, u.role as user_role, t.name as team_name
             FROM leaves l
             JOIN users u ON l.user_id = u.id
             LEFT JOIN teams t ON u.team_id = t.id
-            WHERE l.id = ?
-        `).get(leaveId);
+            WHERE l.id = ${leaveId}
+        `;
+        const leave = leaves[0];
 
         if (!leave) {
             return c.json({ error: 'Leave not found' }, 404);
         }
 
         // Check access: own leave, team's leave (TL), or admin
+        // cast to any for role check
         const leaveData = leave as any;
         if (user.role === 'employee' && leaveData.user_id !== user.userId) {
             return c.json({ error: 'Forbidden' }, 403);

@@ -6,7 +6,7 @@
 import { Context } from 'hono';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import db from '../config/database';
+import sql from '../config/database';
 import { JWT_CONFIG } from '../config/jwt';
 import { JWTPayload } from '../middleware/authMiddleware';
 
@@ -31,10 +31,12 @@ export const login = async (c: Context) => {
         }
 
         // Find user by email
-        const user = db.query(`
+        const users = await sql<User[]>`
             SELECT id, email, password_hash, name, role, team_id 
-            FROM users WHERE email = ?
-        `).get(email) as User | undefined;
+            FROM users WHERE email = ${email}
+        `;
+
+        const user = users[0];
 
         if (!user) {
             return c.json({ error: 'Invalid credentials' }, 401);
@@ -90,7 +92,8 @@ export const changePassword = async (c: Context) => {
         }
 
         // Get current user
-        const dbUser = db.query('SELECT password_hash FROM users WHERE id = ?').get(user.userId) as { password_hash: string } | undefined;
+        const dbUsers = await sql`SELECT password_hash FROM users WHERE id = ${user.userId}`;
+        const dbUser = dbUsers[0];
 
         if (!dbUser) {
             return c.json({ error: 'User not found' }, 404);
@@ -104,7 +107,11 @@ export const changePassword = async (c: Context) => {
 
         // Hash new password and update
         const newHash = bcrypt.hashSync(newPassword, 10);
-        db.query('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newHash, user.userId);
+        await sql`
+            UPDATE users 
+            SET password_hash = ${newHash}, updated_at = CURRENT_TIMESTAMP 
+            WHERE id = ${user.userId}
+        `;
 
         return c.json({ message: 'Password changed successfully' });
     } catch (error) {
