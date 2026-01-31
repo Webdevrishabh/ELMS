@@ -22,6 +22,11 @@ interface User {
 /**
  * Login user and return JWT token
  */
+// Explicit OPTIONS handler for CORS preflight
+export const handleOptions = (c: Context) => {
+    return c.body(null, 204);
+};
+
 export const login = async (c: Context) => {
     try {
         const body = await c.req.json().catch(() => ({}));
@@ -58,7 +63,7 @@ export const login = async (c: Context) => {
             teamId: user.team_id
         };
 
-        const token = jwt.sign(payload, JWT_CONFIG.secret, { expiresIn: JWT_CONFIG.expiresIn });
+        const token = jwt.sign(payload, JWT_CONFIG.secret, { expiresIn: JWT_CONFIG.expiresIn as any });
 
         return c.json({
             message: 'Login successful',
