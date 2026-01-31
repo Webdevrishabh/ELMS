@@ -13,8 +13,12 @@ if (!connectionString) {
 }
 
 const sql = postgres(connectionString || 'postgres://user:pass@localhost:5432/db', {
-    ssl: connectionString ? 'require' : false, // Railway requires SSL
-    max: 10, // Pool size
+    ssl: connectionString ? 'require' : false,
+    max: 10,
+    connect_timeout: 5, // Fail fast (5 seconds)
+    onnotice: () => { }, // Silence notice logs
 });
+
+console.log('🔌 DB Config:', connectionString ? 'URL provided' : 'Using Fallback (Will fail on Railway)');
 
 export default sql;

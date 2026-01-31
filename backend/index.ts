@@ -61,12 +61,10 @@ app.onError((err, c) => {
 // Initialize DB and Start server
 const port = parseInt(process.env.PORT || '5000');
 import initDb from './src/config/initDb';
-
-try {
-    await initDb();
-} catch (err) {
-    console.error('⚠️ Database initialization failed (Server continuing anyway):', err);
-}
+// Initialize DB (Non-blocking)
+initDb().catch(err => {
+    console.error('⚠️ Async Database initialization failed:', err);
+});
 
 console.log(`
 ╔═══════════════════════════════════════════╗
