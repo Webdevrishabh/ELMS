@@ -37,23 +37,31 @@ export const login = async (c: Context) => {
             return c.json({ error: 'Email and password are required' }, 400);
         }
 
+        console.log(`🔍 Attempting login for email: ${email}`);
+
         // Find user by email
+        console.log('⏳ Querying database for user...');
         const users = await sql<User[]>`
             SELECT id, email, password_hash, name, role, team_id 
             FROM users WHERE email = ${email}
         `;
+        console.log(`✅ Database query complete. Found ${users.length} users.`);
 
         const user = users[0];
 
         if (!user) {
+            console.warn('❌ User not found in database.');
             return c.json({ error: 'Invalid credentials' }, 401);
         }
 
         // Verify password
+        console.log('⏳ Verifying password hash...');
         const validPassword = bcrypt.compareSync(password, user.password_hash);
         if (!validPassword) {
+            console.warn('❌ Password mismatch.');
             return c.json({ error: 'Invalid credentials' }, 401);
         }
+        console.log('✅ Password verified.');
 
         // Generate JWT
         const payload: JWTPayload = {
@@ -64,6 +72,7 @@ export const login = async (c: Context) => {
         };
 
         const token = jwt.sign(payload, JWT_CONFIG.secret, { expiresIn: JWT_CONFIG.expiresIn as any });
+        console.log('✅ JWT generated. Sending response.');
 
         return c.json({
             message: 'Login successful',
