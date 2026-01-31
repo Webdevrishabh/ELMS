@@ -24,7 +24,9 @@ interface User {
  */
 export const login = async (c: Context) => {
     try {
-        const { email, password } = await c.req.json();
+        const body = await c.req.json().catch(() => ({}));
+        console.log('Login request body:', JSON.stringify(body));
+        const { email, password } = body;
 
         if (!email || !password) {
             return c.json({ error: 'Email and password are required' }, 400);
