@@ -3,7 +3,7 @@
  * Handles all API calls to the backend
  */
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = '/api';
 
 // Get stored auth token
 const getToken = () => localStorage.getItem('token');
