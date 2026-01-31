@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
     team_id INTEGER REFERENCES teams(id),
     leave_balance INTEGER DEFAULT 20,
     sick_leave_balance INTEGER DEFAULT 10,
-    casual_leave_balance DEFAULT 5,
+    casual_leave_balance INTEGER DEFAULT 5,
     skills TEXT, -- JSON array stored as text
     phone TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
